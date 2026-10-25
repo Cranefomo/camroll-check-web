@@ -238,12 +238,14 @@ body {
 .detect-item.h::before { background: var(--high); }
 .detect-item.m::before { background: var(--medium); }
 .detect-item.l::before { background: var(--low); }
+.hint { font-size: 11px; color: var(--fg2); text-align: center; margin-top: 12px; line-height: 1.4; opacity: 0.7; }
 
 .gh-link {
   display: block; text-align: center; margin-top: 32px;
   font-size: 12px; color: var(--fg2);
 }
 .gh-link a { color: var(--accent); text-decoration: none; }
+.disclaimer { font-size: 9px; color: var(--fg2); text-align: center; margin: 16px auto 0; max-width: 480px; line-height: 1.5; opacity: 0.45; }
 
 @media (prefers-reduced-motion: reduce) {
   .progress-bar-fill { transition: none; }
@@ -280,6 +282,7 @@ body {
     <div class="detect-item m">passwords</div>
     <div class="detect-item l">crypto addresses</div>
   </div>
+  <div class="hint">Best results with screenshots &amp; scanned docs — printed or embossed text on physical objects may not be recognized.</div>
 </div>
 
 <div id="progress-area" style="display:none">
@@ -323,6 +326,7 @@ body {
 <div class="gh-link">
   <a href="https://github.com/Cranefomo/camroll-check">github.com/Cranefomo/camroll-check</a> &mdash; also available as a CLI tool
 </div>
+<div class="disclaimer">This tool is provided &ldquo;as is&rdquo; without warranty of any kind. Detection is based on OCR and pattern matching and may produce false positives or miss findings. Works best with screenshots and scanned documents. The authors assume no liability for any damages or losses arising from the use of this tool. Not a substitute for professional security audit.</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 <script>

@@ -32,8 +32,16 @@ open **[cranefomo.github.io/camroll-check-web](https://cranefomo.github.io/camro
 4. card or IBAN visible? watch your statements, consider reissue if CVV was there
 5. API keys? rotate them immediately
 
+## best results
+
+works best with **screenshots** and **scanned documents** — clear text on solid backgrounds. printed or embossed text on physical objects may not be recognized due to OCR limitations.
+
 ## CLI version
 
 need to scan thousands of photos at once? use the [CLI tool](https://github.com/Cranefomo/camroll-check) — same detection, runs on Mac/Linux/Windows.
+
+## disclaimer
+
+this tool is provided "as is" without warranty of any kind. detection is based on OCR and pattern matching and may produce false positives or miss findings. the authors assume no liability for any damages or losses arising from the use of this tool. not a substitute for professional security audit.
 
 MIT license.
