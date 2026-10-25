@@ -392,9 +392,9 @@ function findIbans(text){const re=/\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b/g;co
 
 function findMrz(text){const re=/^[A-Z0-9<]{30,44}$/;const lines=text.toUpperCase().split('\n').map(l=>l.replace(/ /g,''));const mrz=lines.filter(l=>re.test(l)&&(l.match(/</g)||[]).length>=3);if(mrz.length>=2||mrz.some(l=>(l.startsWith('P<')||l.startsWith('I<')||l.startsWith('ID'))&&l.includes('<<')))return[{kind:'id_document',severity:'high',masked:'MRZ lines detected',note:'passport or ID card photo'}];return[]}
 
-function findPasswords(text){const re=/\b(?:password|passwd|pwd|passcode|пароль)\s*[:=]\s*(\S{4,})/gi;const out=[];let m;while((m=re.exec(text))!==null)out.push({kind:'password',severity:'medium',masked:'password: '+mask(m[1],1,1),note:'password written next to a label'});return out}
+function findPasswords(text){const re=/(?:^|[\s;,.(])(?:password|passwd|pwd|passcode|пароль|naposb|naponb|naporb)\s*[:=]\s*(\S{4,})/gim;const out=[];let m;while((m=re.exec(text))!==null)out.push({kind:'password',severity:'medium',masked:'password: '+mask(m[1],1,1),note:'password written next to a label'});return out}
 
-function findRecoveryCodes(text){const codes=text.match(/\b(?:\d{4}[ -]?\d{4}|[a-z0-9]{4,5}-[a-z0-9]{4,5})\b/gi)||[];if(/\b(backup codes?|recovery codes?|recovery key|резервн\w* код\w*)\b/i.test(text)&&codes.length>=4)return[{kind:'recovery_codes',severity:'high',masked:codes.length+' codes',note:'2FA backup / recovery codes'}];return[]}
+function findRecoveryCodes(text){const codes=text.match(/\b(?:\d{4}[ -]?\d{4}|[a-z0-9]{4,5}-[a-z0-9]{4,5})\b/gi)||[];if((/\b(backup codes?|recovery codes?|recovery key)\b/i.test(text)||/резервн[а-яіїєґА-ЯІЇЄҐ]* код[а-яіїєґА-ЯІЇЄҐ]*/i.test(text))&&codes.length>=4)return[{kind:'recovery_codes',severity:'high',masked:codes.length+' codes',note:'2FA backup / recovery codes'}];return[]}
 
 const KEY_PATTERNS=[['private_key',/-----BEGIN [A-Z ]*PRIVATE KEY-----/g],['api_key_openai',/\bsk-[A-Za-z0-9_-]{20,}/g],['api_key_anthropic',/\bsk-ant-[A-Za-z0-9_-]{20,}/g],['github_token',/\bgh[pousr]_[A-Za-z0-9]{30,}/g],['aws_key',/\bAKIA[0-9A-Z]{16}\b/g],['slack_token',/\bxox[abpr]-[A-Za-z0-9-]{10,}/g]];
 
@@ -412,11 +412,11 @@ while((m=ethRe.exec(joined))!==null){
     out.push({kind:'crypto_address',severity:'low',masked:mask(addr,6,4),note:'ETH wallet address'});
   }
 }
-// BTC bech32
-const btcRe=/\b(bc1[a-zA-Z0-9]{25,87})\b/g;
+// BTC bech32 — tolerant of OCR spaces inside the address
+const btcRe=/\b(bc1[a-zA-Z0-9][a-zA-Z0-9 ]{24,95})/g;
 while((m=btcRe.exec(joined))!==null){
-  const a=m[1].toLowerCase();
-  if(/^bc1[a-z0-9]{25,87}$/.test(a))out.push({kind:'crypto_address',severity:'low',masked:mask(a,6,4),note:'BTC wallet address'});
+  const a=m[1].replace(/\s/g,'').toLowerCase();
+  if(a.length>=27&&a.length<=90&&/^bc1[a-z0-9]{25,87}$/.test(a))out.push({kind:'crypto_address',severity:'low',masked:mask(a,6,4),note:'BTC wallet address'});
 }
 return out;
 }
