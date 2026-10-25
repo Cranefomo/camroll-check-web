@@ -334,27 +334,55 @@ function ibanOk(iban){const s=iban.slice(4)+iban.slice(0,4);let num='';for(const
 
 function findSeedPhrases(text){const tokens=(text.toLowerCase().match(/[a-zA-Z]+/g)||[]);let best=0,run=0;for(const t of tokens){if(BIP39.has(t)){run++;best=Math.max(best,run)}else run=0}if(best>=12)return[{kind:'seed_phrase',severity:'high',masked:'12+ BIP39 words in a row',note:'looks like a crypto wallet recovery phrase'}];return[]}
 
+function ocrFixDigits(s){return s.replace(/[oO]/g,'0').replace(/[iIl|]/g,'1').replace(/[gq]/g,'9').replace(/[sS$]/g,'5').replace(/[zZ]/g,'2').replace(/[B]/g,'8').replace(/[b]/g,'6')}
 function findCards(text){
-const finKw=/\b(shares?|portfolio|market|trade[ds]?|avg\s*price|volume|profit|loss|p\/l|expiry|conviction|crowdfeed|leaderboard|claimed|markets?\s*traded)\b/i;
+const finKw=/\b(shares?|portfolio|avg\s*price|volume\s*traded|profit|loss|p\/l|conviction|crowdfeed|leaderboard|claimed|markets?\s*traded)\b/i;
 const isFin=finKw.test(text);
-const re=/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;const out=[];let m;
-while((m=re.exec(text))!==null){
-  const raw=m[0];
-  const d=raw.replace(/\D/g,'');
+const out=[];
+// Pass 1: exact digit sequences
+const re1=/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;let m;
+while((m=re1.exec(text))!==null){
+  const raw=m[0];const d=raw.replace(/\D/g,'');
   if(d.length<13||d.length>19||!'23456'.includes(d[0])||!luhn(d))continue;
-  // wide context: check ±20 chars for decimal dots
-  const s=Math.max(0,m.index-20);
-  const e=Math.min(text.length,m.index+raw.length+20);
-  const ctx=text.slice(s,e);
-  if(/\d\.\d/.test(ctx))continue;
-  // on financial screenshots require card-like separators (spaces/dashes between digit groups)
-  if(isFin){const sepCount=(raw.match(/[ -]/g)||[]).length;if(sepCount<2)continue;}
-  // check the line containing the match for decimal numbers
-  const lineStart=text.lastIndexOf('\n',m.index)+1;
-  const lineEnd=text.indexOf('\n',m.index+raw.length);
-  const line=text.slice(lineStart,lineEnd===-1?text.length:lineEnd);
-  if(/\d\.\d/.test(line))continue;
+  const s=Math.max(0,m.index-20);const e=Math.min(text.length,m.index+raw.length+20);
+  if(/\d\.\d/.test(text.slice(s,e)))continue;
+  if(isFin){if((raw.match(/[ -]/g)||[]).length<2)continue;}
+  const ls=text.lastIndexOf('\n',m.index)+1;const le=text.indexOf('\n',m.index+raw.length);
+  if(/\d\.\d/.test(text.slice(ls,le===-1?text.length:le)))continue;
   out.push({kind:'payment_card',severity:'high',masked:d[0]+'*** **** **** '+d.slice(-4),note:'Luhn-valid card number'});
+}
+// Pass 2: OCR-corrected — find sequences of digits+OCR-misread chars in card-like groups
+if(!out.length){
+  const re2=/(?<!\w)(\d[\d oOiIl|gqsSzZBb -]{11,22}\d)(?!\w)/g;
+  while((m=re2.exec(text))!==null){
+    const raw=m[1];
+    const fixed=ocrFixDigits(raw);
+    const d=fixed.replace(/\D/g,'');
+    if(d.length<13||d.length>19||!'23456'.includes(d[0])||!luhn(d))continue;
+    // require at least 2 separators (spaces/dashes) — OCR-corrected matches must look card-like
+    if((raw.match(/[ -]/g)||[]).length<2)continue;
+    const s=Math.max(0,m.index-20);const e=Math.min(text.length,m.index+raw.length+20);
+    if(/\d\.\d/.test(text.slice(s,e)))continue;
+    out.push({kind:'payment_card',severity:'high',masked:d[0]+'*** **** **** '+d.slice(-4),note:'Luhn-valid card number (OCR-corrected)'});
+  }
+}
+// Pass 3: context-based — if 4-group digit-like pattern + card context clues, flag even without Luhn
+if(!out.length){
+  const cardCtx=/\b(valid\s*thru|valid\s*till|expiry\s*date|exp\s*date|expires?|member\s*since|debit|credit|visa|mastercard|maestro|мастеркард|віза|платіжна)\b/i;
+  const expiryPat=/\b\d{2}\s*\/\s*\d{2,4}\b/;
+  const nameOnCard=/\b[A-Z]{2,}(?:\s+[A-Z]{2,}){1,3}\b/;
+  const hasCtx=cardCtx.test(text)||expiryPat.test(text);
+  const hasName=nameOnCard.test(text);
+  if(hasCtx||hasName){
+    /* look for 4-group pattern: XXXX XXXX XXXX XXXX (digits or OCR-misread chars) */
+    const grpRe=/(?<!\w)([\doOiIl|gqsSzZBb]{3,6}[ -][\doOiIl|gqsSzZBb]{3,6}[ -][\doOiIl|gqsSzZBb]{3,6}[ -][\doOiIl|gqsSzZBb]{3,6})(?!\w)/g;
+    while((m=grpRe.exec(text))!==null){
+      const raw=m[1];const fixed=ocrFixDigits(raw);const d=fixed.replace(/\D/g,'');
+      if(d.length<13||d.length>19)continue;
+      out.push({kind:'payment_card',severity:'high',masked:d[0]+'*** **** **** '+d.slice(-4),note:'card number detected (with card context: expiry/name)'});
+      break;
+    }
+  }
 }
 if(out.length&&/\b(cvv|cvc|cvv2|security code)\b/i.test(text))out[0].note+=', CVV label on the same image';
 return out;
@@ -372,7 +400,26 @@ const KEY_PATTERNS=[['private_key',/-----BEGIN [A-Z ]*PRIVATE KEY-----/g],['api_
 
 function findKeys(text){const out=[];for(const[kind,rx]of KEY_PATTERNS){rx.lastIndex=0;let m;while((m=rx.exec(text))!==null)out.push({kind,severity:'high',masked:mask(m[0],6,2),note:'secret key or token'})}return out}
 
-function findAddresses(text){const re=/\b(?:bc1[a-z0-9]{25,59}|0x[a-fA-F0-9]{40})\b/g;const out=[];let m;while((m=re.exec(text))!==null)out.push({kind:'crypto_address',severity:'low',masked:mask(m[0],6,4),note:'wallet address'});return out}
+function findAddresses(text){
+const out=[];
+// ETH: find 0x (or Ox/0X) then collect ~40 hex-ish chars, tolerant of OCR line breaks and misreads
+const joined=text.replace(/\r?\n/g,' ');
+const ethRe=/\b[0O][xX]([a-fA-F0-9][a-fA-F0-9 ]{38,50})/g;let m;
+while((m=ethRe.exec(joined))!==null){
+  const raw=m[1].replace(/\s/g,'');
+  if(raw.length>=39&&raw.length<=42&&/^[a-fA-F0-9]+$/.test(raw)){
+    const addr='0x'+raw.slice(0,40);
+    out.push({kind:'crypto_address',severity:'low',masked:mask(addr,6,4),note:'ETH wallet address'});
+  }
+}
+// BTC bech32
+const btcRe=/\b(bc1[a-zA-Z0-9]{25,87})\b/g;
+while((m=btcRe.exec(joined))!==null){
+  const a=m[1].toLowerCase();
+  if(/^bc1[a-z0-9]{25,87}$/.test(a))out.push({kind:'crypto_address',severity:'low',masked:mask(a,6,4),note:'BTC wallet address'});
+}
+return out;
+}
 
 function scanText(text){const all=[...findSeedPhrases(text),...findCards(text),...findIbans(text),...findMrz(text),...findRecoveryCodes(text),...findKeys(text),...findPasswords(text),...findAddresses(text)];const kinds=new Set(all.map(f=>f.kind));if(kinds.has('api_key_anthropic'))return all.filter(f=>f.kind!=='api_key_openai');return all}
 
@@ -387,6 +434,38 @@ async function initWorker(){
 }
 
 function createThumb(file){return new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.readAsDataURL(file)})}
+
+/* Preprocess image for better OCR: grayscale + contrast boost + threshold */
+function preprocessImage(file){return new Promise((res,rej)=>{
+  const img=new Image();
+  img.onload=()=>{
+    const c=document.createElement('canvas');
+    c.width=img.width;c.height=img.height;
+    const ctx=c.getContext('2d');
+    ctx.drawImage(img,0,0);
+    const id=ctx.getImageData(0,0,c.width,c.height);
+    const d=id.data;
+    /* grayscale + contrast stretch */
+    let mn=255,mx=0;
+    for(let i=0;i<d.length;i+=4){
+      const g=Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
+      d[i]=d[i+1]=d[i+2]=g;
+      if(g<mn)mn=g;if(g>mx)mx=g;
+    }
+    const range=mx-mn||1;
+    for(let i=0;i<d.length;i+=4){
+      let v=Math.round((d[i]-mn)/range*255);
+      /* boost contrast */
+      v=v<128?Math.max(0,Math.round(v*0.5)):Math.min(255,Math.round(128+(v-128)*1.5));
+      d[i]=d[i+1]=d[i+2]=v;
+    }
+    ctx.putImageData(id,0,0);
+    c.toBlob(b=>b?res(b):rej('blob failed'),'image/png');
+  };
+  img.onerror=rej;
+  const u=URL.createObjectURL(file);
+  img.src=u;
+})}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function show(id){$(id).style.display=''}
 function hide(id){$(id).style.display='none'}
@@ -410,7 +489,20 @@ async function runScan(files){
 
     try{
       const{data:{text}}=await worker.recognize(file);
-      const findings=scanText(text);
+      let findings=scanText(text);
+      /* If no cards found, retry with preprocessed image for better OCR on physical cards */
+      if(!findings.some(f=>f.kind==='payment_card')&&file.type&&file.type.startsWith('image/')){
+        try{
+          const enhanced=await preprocessImage(file);
+          const{data:{text:text2}}=await worker.recognize(enhanced);
+          const findings2=scanText(text2);
+          if(findings2.some(f=>f.kind==='payment_card')){
+            /* merge: keep unique findings from both passes */
+            const kinds=new Set(findings.map(f=>f.kind));
+            for(const f of findings2)if(!kinds.has(f.kind)){findings.push(f);kinds.add(f.kind)}
+          }
+        }catch(e2){/* preprocessing failed, use original results */}
+      }
       scanned++;
       if(findings.length>0){
         findings.sort((a,b)=>SEV[a.severity]-SEV[b.severity]);
