@@ -359,10 +359,7 @@ let worker=null;
 
 async function initWorker(){
   $('progFile').textContent='loading OCR engine...';
-  worker=await Tesseract.createWorker('eng',1,{
-    workerPath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/worker.min.js',
-    corePath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js-core/5.1.0/tesseract-core-simd-lstm.wasm.js',
-  });
+  worker=await Tesseract.createWorker('eng');
 }
 
 function createThumb(file){return new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.readAsDataURL(file)})}
