@@ -348,7 +348,7 @@ while((m=re.exec(text))!==null){
   const ctx=text.slice(s,e);
   if(/\d\.\d/.test(ctx))continue;
   // on financial screenshots require card-like separators (spaces/dashes between digit groups)
-  if(isFin){const seps=raw.replace(/\d/g,'').replace(/ /g,' ').trim();if(seps.length<3)continue;}
+  if(isFin){const sepCount=(raw.match(/[ -]/g)||[]).length;if(sepCount<2)continue;}
   // check the line containing the match for decimal numbers
   const lineStart=text.lastIndexOf('\n',m.index)+1;
   const lineEnd=text.indexOf('\n',m.index+raw.length);
