@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>camroll-check</title>
+<meta name="description" content="Scan your camera roll for screenshots with secrets — seed phrases, card numbers, passwords, API keys. Runs 100% in your browser, nothing leaves your device.">
+<meta name="theme-color" content="#0c0e14">
+<meta property="og:title" content="camroll-check — find secrets in your camera roll">
+<meta property="og:description" content="Scan photos for seed phrases, card numbers, IBANs, passport MRZ, 2FA codes, API keys, passwords. 100% on-device, no uploads.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #0c0e14;
+  --bg2: #141722;
+  --bg3: #1c2030;
+  --fg: #d4d8e4;
+  --fg2: #8890a4;
+  --accent: #e84545;
+  --accent-dim: #e8454520;
+  --high: #e84545;
+  --medium: #e8a832;
+  --low: #5cb8d0;
+  --ok: #3dcc6e;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --sans: 'Inter', -apple-system, system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f5f8; --bg2: #ffffff; --bg3: #e8eaf0;
+    --fg: #1a1d28; --fg2: #6b7080;
+    --accent: #cc3030; --accent-dim: #cc303012;
+    --high: #cc3030; --medium: #c08c18; --low: #2a8da6; --ok: #1fa04a;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f4f5f8; --bg2: #ffffff; --bg3: #e8eaf0;
+  --fg: #1a1d28; --fg2: #6b7080;
+  --accent: #cc3030; --accent-dim: #cc303012;
+  --high: #cc3030; --medium: #c08c18; --low: #2a8da6; --ok: #1fa04a;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  padding: 0 max(16px, env(safe-area-inset-left, 0px)) 40px max(16px, env(safe-area-inset-right, 0px));
+  max-width: 640px;
+  margin: 0 auto;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+.header {
+  padding: max(env(safe-area-inset-top, 16px), 32px) 0 24px;
+  text-align: center;
+}
+.header h1 {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0 0 6px;
+  letter-spacing: -0.5px;
+}
+.header p {
+  color: var(--fg2);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+.privacy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 5px 12px;
+  background: var(--ok);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 100px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.upload-zone {
+  border: 2px dashed var(--bg3);
+  border-radius: 16px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.upload-zone:active, .upload-zone.drag {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.upload-zone input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 200px;
+}
+.upload-icon {
+  width: 48px; height: 48px;
+  margin: 0 auto 14px;
+  border-radius: 12px;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upload-icon svg {
+  width: 24px; height: 24px;
+  stroke: var(--fg2); fill: none;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.upload-zone .label { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.upload-zone .sublabel { color: var(--fg2); font-size: 12px; }
+
+.progress-section { margin-top: 24px; }
+.progress-bar-wrap {
+  height: 6px; background: var(--bg3);
+  border-radius: 3px; overflow: hidden; margin-bottom: 10px;
+}
+.progress-bar-fill {
+  height: 100%; background: var(--accent);
+  border-radius: 3px; width: 0%; transition: width 0.3s;
+}
+.progress-text {
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: var(--fg2); font-family: var(--mono);
+}
+.progress-text .current-file {
+  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; max-width: 65%;
+}
+
+.stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px; margin-top: 20px;
+}
+.stat {
+  background: var(--bg2); border-radius: 10px;
+  padding: 12px; text-align: center;
+}
+.stat .num {
+  font-family: var(--mono); font-size: 24px;
+  font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.stat .lbl {
+  font-size: 11px; color: var(--fg2); margin-top: 2px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.stat.high .num { color: var(--high); }
+.stat.medium .num { color: var(--medium); }
+.stat.low .num { color: var(--low); }
+
+.results-section { margin-top: 24px; padding-bottom: 40px; }
+.results-section h2 {
+  font-size: 14px; font-weight: 600; margin: 0 0 12px;
+  text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg2);
+}
+.finding-card {
+  background: var(--bg2); border-radius: 12px;
+  padding: 14px; margin-bottom: 10px;
+  border-left: 3px solid var(--high);
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.finding-card.medium { border-left-color: var(--medium); }
+.finding-card.low { border-left-color: var(--low); }
+.finding-thumb {
+  width: 64px; height: 64px; border-radius: 8px;
+  object-fit: cover; flex-shrink: 0;
+  filter: blur(6px); -webkit-filter: blur(6px);
+}
+.finding-info { flex: 1; min-width: 0; }
+.finding-name {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--fg2); margin-bottom: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.finding-tag {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 4px;
+  margin-right: 6px; margin-bottom: 4px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.finding-tag.high { background: var(--high); color: #fff; }
+.finding-tag.medium { background: var(--medium); color: #fff; }
+.finding-tag.low { background: var(--low); color: #fff; }
+.finding-masked {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--fg); margin-top: 4px; word-break: break-all;
+}
+.finding-note { font-size: 12px; color: var(--fg2); margin-top: 2px; }
+
+.done-banner {
+  text-align: center; padding: 20px; margin-top: 20px;
+  border-radius: 12px; background: var(--bg2);
+}
+.done-banner.clean { border: 1px solid var(--ok); }
+.done-banner .icon { font-size: 32px; margin-bottom: 8px; }
+.done-banner .msg { font-size: 15px; font-weight: 600; }
+.done-banner .sub { font-size: 12px; color: var(--fg2); margin-top: 4px; }
+
+.scan-again {
+  display: block; width: 100%; margin-top: 16px; padding: 14px;
+  background: var(--bg3); color: var(--fg); border: none;
+  border-radius: 10px; font-family: var(--sans);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.scan-again:active { opacity: 0.7; }
+
+.detects {
+  margin-top: 24px; display: grid;
+  grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.detect-item {
+  font-size: 11px; color: var(--fg2); padding: 6px 8px;
+  background: var(--bg2); border-radius: 6px; font-family: var(--mono);
+}
+.detect-item::before {
+  content: ''; display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  margin-right: 6px; vertical-align: middle;
+}
+.detect-item.h::before { background: var(--high); }
+.detect-item.m::before { background: var(--medium); }
+.detect-item.l::before { background: var(--low); }
+
+.gh-link {
+  display: block; text-align: center; margin-top: 32px;
+  font-size: 12px; color: var(--fg2);
+}
+.gh-link a { color: var(--accent); text-decoration: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar-fill { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>camroll-check</h1>
+  <p>find screenshots with secrets in your camera roll</p>
+  <div class="privacy-badge">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    100% on-device
+  </div>
+</div>
+
+<div id="upload-area">
+  <div class="upload-zone" id="dropzone">
+    <input type="file" id="fileInput" accept="image/*" multiple>
+    <div class="upload-icon">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    </div>
+    <div class="label">Tap to select photos</div>
+    <div class="sublabel">or choose from Files &mdash; nothing leaves your device</div>
+  </div>
+  <div class="detects">
+    <div class="detect-item h">seed phrases</div>
+    <div class="detect-item h">card numbers</div>
+    <div class="detect-item h">passport MRZ</div>
+    <div class="detect-item h">recovery codes</div>
+    <div class="detect-item h">API keys</div>
+    <div class="detect-item m">IBAN</div>
+    <div class="detect-item m">passwords</div>
+    <div class="detect-item l">crypto addresses</div>
+  </div>
+</div>
+
+<div id="progress-area" style="display:none">
+  <div class="progress-section">
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progBar"></div>
+    </div>
+    <div class="progress-text">
+      <span class="current-file" id="progFile">loading OCR engine...</span>
+      <span id="progCount">0 / 0</span>
+    </div>
+  </div>
+</div>
+
+<div id="stats-area" style="display:none">
+  <div class="stats">
+    <div class="stat">
+      <div class="num" id="numScanned">0</div>
+      <div class="lbl">scanned</div>
+    </div>
+    <div class="stat high">
+      <div class="num" id="numHigh">0</div>
+      <div class="lbl">high</div>
+    </div>
+    <div class="stat medium">
+      <div class="num" id="numMed">0</div>
+      <div class="lbl">medium</div>
+    </div>
+  </div>
+</div>
+
+<div id="results-area" style="display:none">
+  <div class="results-section">
+    <h2 id="resultsTitle">findings</h2>
+    <div id="resultsList"></div>
+  </div>
+</div>
+
+<div id="done-area" style="display:none"></div>
+
+<div class="gh-link">
+  <a href="https://github.com/Cranefomo/camroll-check">github.com/Cranefomo/camroll-check</a> &mdash; also available as a CLI tool
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+<script>
+const BIP39=new Set("abandon ability able about above absent absorb abstract absurd abuse access accident account accuse achieve acid acoustic acquire across act action actor actress actual adapt add addict address adjust admit adult advance advice aerobic affair afford afraid again age agent agree ahead aim air airport aisle alarm album alcohol alert alien all alley allow almost alone alpha already also alter always amateur amazing among amount amused analyst anchor ancient anger angle angry animal ankle announce annual another answer antenna antique anxiety any apart apology appear apple approve april arch arctic area arena argue arm armed armor army around arrange arrest arrive arrow art artefact artist artwork ask aspect assault asset assist assume asthma athlete atom attack attend attitude attract auction audit august aunt author auto autumn average avocado avoid awake aware away awesome awful awkward axis baby bachelor bacon badge bag balance balcony ball bamboo banana banner bar barely bargain barrel base basic basket battle beach bean beauty because become beef before begin behave behind believe below belt bench benefit best betray better between beyond bicycle bid bike bind biology bird birth bitter black blade blame blanket blast bleak bless blind blood blossom blouse blue blur blush board boat body boil bomb bone bonus book boost border boring borrow boss bottom bounce box boy bracket brain brand brass brave bread breeze brick bridge brief bright bring brisk broccoli broken bronze broom brother brown brush bubble buddy budget buffalo build bulb bulk bullet bundle bunker burden burger burst bus business busy butter buyer buzz cabbage cabin cable cactus cage cake call calm camera camp can canal cancel candy cannon canoe canvas canyon capable capital captain car carbon card cargo carpet carry cart case cash casino castle casual cat catalog catch category cattle caught cause caution cave ceiling celery cement census century cereal certain chair chalk champion change chaos chapter charge chase chat cheap check cheese chef cherry chest chicken chief child chimney choice choose chronic chuckle chunk churn cigar cinnamon circle citizen city civil claim clap clarify claw clay clean clerk clever click client cliff climb clinic clip clock clog close cloth cloud clown club clump cluster clutch coach coast coconut code coffee coil coin collect color column combine come comfort comic common company concert conduct confirm congress connect consider control convince cook cool copper copy coral core corn correct cost cotton couch country couple course cousin cover coyote crack cradle craft cram crane crash crater crawl crazy cream credit creek crew cricket crime crisp critic crop cross crouch crowd crucial cruel cruise crumble crunch crush cry crystal cube culture cup cupboard curious current curtain curve cushion custom cute cycle dad damage damp dance danger daring dash daughter dawn day deal debate debris decade december decide decline decorate decrease deer defense define defy degree delay deliver demand demise denial dentist deny depart depend deposit depth deputy derive describe desert design desk despair destroy detail detect develop device devote diagram dial diamond diary dice diesel diet differ digital dignity dilemma dinner dinosaur direct dirt disagree discover disease dish dismiss disorder display distance divert divide divorce dizzy doctor document dog doll dolphin domain donate donkey donor door dose double dove draft dragon drama drastic draw dream dress drift drill drink drip drive drop drum dry duck dumb dune during dust dutch duty dwarf dynamic eager eagle early earn earth easily east easy echo ecology economy edge edit educate effort egg eight either elbow elder electric elegant element elephant elevator elite else embark embody embrace emerge emotion employ empower empty enable enact end endless endorse enemy energy enforce engage engine enhance enjoy enlist enough enrich enroll ensure enter entire entry envelope episode equal equip era erase erode erosion error erupt escape essay essence estate eternal ethics evidence evil evoke evolve exact example excess exchange excite exclude excuse execute exercise exhaust exhibit exile exist exit exotic expand expect expire explain expose express extend extra eye eyebrow fabric face faculty fade faint faith fall false fame family famous fan fancy fantasy farm fashion fat fatal father fatigue fault favorite feature february federal fee feed feel female fence festival fetch fever few fiber fiction field figure file film filter final find fine finger finish fire firm first fiscal fish fit fitness fix flag flame flash flat flavor flee flight flip float flock floor flower fluid flush fly foam focus fog foil fold follow food foot force forest forget fork fortune forum forward fossil foster found fox fragile frame frequent fresh friend fringe frog front frost frown frozen fruit fuel fun funny furnace fury future gadget gain galaxy gallery game gap garage garbage garden garlic garment gas gasp gate gather gauge gaze general genius genre gentle genuine gesture ghost giant gift giggle ginger giraffe girl give glad glance glare glass glide glimpse globe gloom glory glove glow glue goat goddess gold good goose gorilla gospel gossip govern gown grab grace grain grant grape grass gravity great green grid grief grit grocery group grow grunt guard guess guide guilt guitar gun gym habit hair half hammer hamster hand happy harbor hard harsh harvest hat have hawk hazard head health heart heavy hedgehog height hello helmet help hen hero hidden high hill hint hip hire history hobby hockey hold hole holiday hollow home honey hood hope horn horror horse hospital host hotel hour hover hub huge human humble humor hundred hungry hunt hurdle hurry hurt husband hybrid ice icon idea identify idle ignore ill illegal illness image imitate immense immune impact impose improve impulse inch include income increase index indicate indoor industry infant inflict inform inhale inherit initial inject injury inmate inner innocent input inquiry insane insect inside inspire install intact interest into invest invite involve iron island isolate issue item ivory jacket jaguar jar jazz jealous jeans jelly jewel job join joke journey joy judge juice jump jungle junior junk just kangaroo keen keep ketchup key kick kid kidney kind kingdom kiss kit kitchen kite kitten kiwi knee knife knock know lab label labor ladder lady lake lamp language laptop large later latin laugh laundry lava law lawn lawsuit layer lazy leader leaf learn leave lecture left leg legal legend leisure lemon lend length lens leopard lesson letter level liar liberty library license life lift light like limb limit link lion liquid list little live lizard load loan lobster local lock logic lonely long loop lottery loud lounge love loyal lucky luggage lumber lunar lunch luxury lyrics machine mad magic magnet maid mail main major make mammal man manage mandate mango mansion manual maple marble march margin marine market marriage mask mass master match material math matrix matter maximum maze meadow mean measure meat mechanic medal media melody melt member memory mention menu mercy merge merit merry mesh message metal method middle midnight milk million mimic mind minimum minor minute miracle mirror misery miss mistake mix mixed mixture mobile model modify mom moment monitor monkey monster month moon moral more morning mosquito mother motion motor mountain mouse move movie much muffin mule multiply muscle museum mushroom music must mutual myself mystery myth naive name napkin narrow nasty nation nature near neck need negative neglect neither nephew nerve nest net network neutral never news next nice night noble noise nominee noodle normal north nose notable note nothing notice novel now nuclear number nurse nut oak obey object oblige obscure observe obtain obvious occur ocean october odor off offer office often oil okay old olive olympic omit once one onion online only open opera opinion oppose option orange orbit orchard order ordinary organ orient original orphan ostrich other outdoor outer output outside oval oven over own owner oxygen oyster ozone pact paddle page pair palace palm panda panel panic panther paper parade parent park parrot party pass patch path patient patrol pattern pause pave payment peace peanut pear peasant pelican pen penalty pencil people pepper perfect permit person pet phone photo phrase physical piano picnic picture piece pig pigeon pill pilot pink pioneer pipe pistol pitch pizza place planet plastic plate play please pledge pluck plug plunge poem poet point polar pole police pond pony pool popular portion position possible post potato pottery poverty powder power practice praise predict prefer prepare present pretty prevent price pride primary print priority prison private prize problem process produce profit program project promote proof property prosper protect proud provide public pudding pull pulp pulse pumpkin punch pupil puppy purchase purity purpose purse push put puzzle pyramid quality quantum quarter question quick quit quiz quote rabbit raccoon race rack radar radio rail rain raise rally ramp ranch random range rapid rare rate rather raven raw razor ready real reason rebel rebuild recall receive recipe record recycle reduce reflect reform refuse region regret regular reject relax release relief rely remain remember remind remove render renew rent reopen repair repeat replace report require rescue resemble resist resource response result retire retreat return reunion reveal review reward rhythm rib ribbon rice rich ride ridge rifle right rigid ring riot ripple risk ritual rival river road roast robot robust rocket romance roof rookie room rose rotate rough round route royal rubber rude rug rule run runway rural sad saddle sadness safe sail salad salmon salon salt salute same sample sand satisfy satoshi sauce sausage save say scale scan scare scatter scene scheme school science scissors scorpion scout scrap screen script scrub sea search season seat second secret section security seed seek segment select sell seminar senior sense sentence series service session settle setup seven shadow shaft shallow share shed shell sheriff shield shift shine ship shiver shock shoe shoot shop short shoulder shove shrimp shrug shuffle shy sibling sick side siege sight sign silent silk silly silver similar simple since sing siren sister situate six size skate sketch ski skill skin skirt skull slab slam sleep slender slice slide slight slim slogan slot slow slush small smart smile smoke smooth snack snake snap sniff snow soap soccer social sock soda soft solar soldier solid solution solve someone song soon sorry sort soul sound soup source south space spare spatial spawn speak special speed spell spend sphere spice spider spike spin spirit split spoil sponsor spoon sport spot spray spread spring spy square squeeze squirrel stable stadium staff stage stairs stamp stand start state stay steak steel stem step stereo stick still sting stock stomach stone stool story stove strategy street strike strong struggle student stuff stumble style subject submit subway success such sudden suffer sugar suggest suit summer sun sunny sunset super supply supreme sure surface surge surprise surround survey suspect sustain swallow swamp swap swarm swear sweet swift swim swing switch sword symbol symptom syrup system table tackle tag tail talent talk tank tape target task taste tattoo taxi teach team tell ten tenant tennis tent term test text thank that theme then theory there they thing this thought three thrive throw thumb thunder ticket tide tiger tilt timber time tiny tip tired tissue title toast tobacco today toddler toe together toilet token tomato tomorrow tone tongue tonight tool tooth top topic topple torch tornado tortoise toss total tourist toward tower town toy track trade traffic tragic train transfer trap trash travel tray treat tree trend trial tribe trick trigger trim trip trophy trouble truck true truly trumpet trust truth try tube tuition tumble tuna tunnel turkey turn turtle twelve twenty twice twin twist two type typical ugly umbrella unable unaware uncle uncover under undo unfair unfold unhappy uniform unique unit universe unknown unlock until unusual unveil update upgrade uphold upon upper upset urban urge usage use used useful useless usual utility vacant vacuum vague valid valley valve van vanish vapor various vast vault vehicle velvet vendor venture venue verb verify version very vessel veteran viable vibrant vicious victory video view village vintage violin virtual virus visa visit visual vital vivid vocal voice void volcano volume vote voyage wage wagon wait walk wall walnut want warfare warm warrior wash wasp waste water wave way wealth weapon wear weasel weather web wedding weekend weird welcome west wet whale what wheat wheel when where whip whisper wide width wife wild will win window wine wing wink winner winter wire wisdom wise wish witness wolf woman wonder wood wool word work world worry worth wrap wreck wrestle wrist write wrong yard year yellow you young youth zebra zero zone zoo".split(/\s+/));
+
+function mask(s,a=2,b=2){s=s.trim();if(s.length<=a+b)return'*'.repeat(s.length);const n=Math.min(8,s.length-a-b);return s.slice(0,a)+'*'.repeat(n)+s.slice(-b)}
+function luhn(n){let t=0,a=false;for(let i=n.length-1;i>=0;i--){let d=parseInt(n[i],10);if(a){d*=2;if(d>9)d-=9}t+=d;a=!a}return t%10===0}
+function ibanOk(iban){const s=iban.slice(4)+iban.slice(0,4);let num='';for(const c of s){const cd=c.charCodeAt(0);if(cd>=48&&cd<=57)num+=c;else num+=(cd-55).toString()}let r=0n;for(let i=0;i<num.length;i+=7){r=BigInt(r.toString()+num.slice(i,i+7))%97n}return r===1n}
+
+function findSeedPhrases(text){const tokens=(text.toLowerCase().match(/[a-zA-Z]+/g)||[]);let best=0,run=0;for(const t of tokens){if(BIP39.has(t)){run++;best=Math.max(best,run)}else run=0}if(best>=12)return[{kind:'seed_phrase',severity:'high',masked:'12+ BIP39 words in a row',note:'looks like a crypto wallet recovery phrase'}];return[]}
+
+function findCards(text){const re=/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;const out=[];let m;while((m=re.exec(text))!==null){const d=m[0].replace(/\D/g,'');if(d.length>=13&&d.length<=19&&'23456'.includes(d[0])&&luhn(d))out.push({kind:'payment_card',severity:'high',masked:d[0]+'*** **** **** '+d.slice(-4),note:'Luhn-valid card number'})}if(out.length&&/\b(cvv|cvc|cvv2|security code)\b/i.test(text))out[0].note+=', CVV label on the same image';return out}
+
+function findIbans(text){const re=/\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b/g;const out=[];let m;const u=text.toUpperCase();while((m=re.exec(u))!==null){const iban=m[0].replace(/ /g,'');if(iban.length>=15&&iban.length<=34&&ibanOk(iban))out.push({kind:'iban',severity:'medium',masked:iban.slice(0,4)+' **** '+iban.slice(-4),note:'valid IBAN'})}return out}
+
+function findMrz(text){const re=/^[A-Z0-9<]{30,44}$/;const lines=text.toUpperCase().split('\n').map(l=>l.replace(/ /g,''));const mrz=lines.filter(l=>re.test(l)&&(l.match(/</g)||[]).length>=3);if(mrz.length>=2||mrz.some(l=>(l.startsWith('P<')||l.startsWith('I<')||l.startsWith('ID'))&&l.includes('<<')))return[{kind:'id_document',severity:'high',masked:'MRZ lines detected',note:'passport or ID card photo'}];return[]}
+
+function findPasswords(text){const re=/\b(?:password|passwd|pwd|passcode|пароль)\s*[:=]\s*(\S{4,})/gi;const out=[];let m;while((m=re.exec(text))!==null)out.push({kind:'password',severity:'medium',masked:'password: '+mask(m[1],1,1),note:'password written next to a label'});return out}
+
+function findRecoveryCodes(text){const codes=text.match(/\b(?:\d{4}[ -]?\d{4}|[a-z0-9]{4,5}-[a-z0-9]{4,5})\b/gi)||[];if(/\b(backup codes?|recovery codes?|recovery key|резервн\w* код\w*)\b/i.test(text)&&codes.length>=4)return[{kind:'recovery_codes',severity:'high',masked:codes.length+' codes',note:'2FA backup / recovery codes'}];return[]}
+
+const KEY_PATTERNS=[['private_key',/-----BEGIN [A-Z ]*PRIVATE KEY-----/g],['api_key_openai',/\bsk-[A-Za-z0-9_-]{20,}/g],['api_key_anthropic',/\bsk-ant-[A-Za-z0-9_-]{20,}/g],['github_token',/\bgh[pousr]_[A-Za-z0-9]{30,}/g],['aws_key',/\bAKIA[0-9A-Z]{16}\b/g],['slack_token',/\bxox[abpr]-[A-Za-z0-9-]{10,}/g]];
+
+function findKeys(text){const out=[];for(const[kind,rx]of KEY_PATTERNS){rx.lastIndex=0;let m;while((m=rx.exec(text))!==null)out.push({kind,severity:'high',masked:mask(m[0],6,2),note:'secret key or token'})}return out}
+
+function findAddresses(text){const re=/\b(?:bc1[a-z0-9]{25,59}|0x[a-fA-F0-9]{40})\b/g;const out=[];let m;while((m=re.exec(text))!==null)out.push({kind:'crypto_address',severity:'low',masked:mask(m[0],6,4),note:'wallet address'});return out}
+
+function scanText(text){const all=[...findSeedPhrases(text),...findCards(text),...findIbans(text),...findMrz(text),...findRecoveryCodes(text),...findKeys(text),...findPasswords(text),...findAddresses(text)];const kinds=new Set(all.map(f=>f.kind));if(kinds.has('api_key_anthropic'))return all.filter(f=>f.kind!=='api_key_openai');return all}
+
+// ── UI ──
+const SEV={high:0,medium:1,low:2};
+const $=id=>document.getElementById(id);
+let worker=null;
+
+async function initWorker(){
+  $('progFile').textContent='loading OCR engine...';
+  worker=await Tesseract.createWorker('eng',1,{
+    workerPath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/worker.min.js',
+    corePath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js-core/5.1.0/tesseract-core-simd-lstm.wasm.js',
+  });
+}
+
+function createThumb(file){return new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.readAsDataURL(file)})}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function show(id){$(id).style.display=''}
+function hide(id){$(id).style.display='none'}
+
+async function runScan(files){
+  hide('upload-area');show('progress-area');show('stats-area');
+  hide('results-area');hide('done-area');
+  $('resultsList').innerHTML='';
+
+  if(!worker)await initWorker();
+
+  const total=files.length;
+  let scanned=0,hi=0,med=0;
+  const results=[];
+
+  for(let i=0;i<total;i++){
+    const file=files[i];
+    $('progFile').textContent=file.name;
+    $('progCount').textContent=`${i+1} / ${total}`;
+    $('progBar').style.width=((i+1)/total*100)+'%';
+
+    try{
+      const{data:{text}}=await worker.recognize(file);
+      const findings=scanText(text);
+      scanned++;
+      if(findings.length>0){
+        findings.sort((a,b)=>SEV[a.severity]-SEV[b.severity]);
+        const thumb=await createThumb(file);
+        results.push({name:file.name,findings,thumb});
+        for(const f of findings){if(f.severity==='high')hi++;else if(f.severity==='medium')med++}
+      }
+    }catch(e){scanned++}
+
+    $('numScanned').textContent=scanned;
+    $('numHigh').textContent=hi;
+    $('numMed').textContent=med;
+  }
+
+  hide('progress-area');
+
+  if(results.length>0){
+    show('results-area');
+    $('resultsTitle').textContent=`${results.length} image${results.length>1?'s':''} flagged`;
+    results.sort((a,b)=>SEV[a.findings[0].severity]-SEV[b.findings[0].severity]);
+    for(const r of results){
+      for(const f of r.findings){
+        const card=document.createElement('div');
+        card.className=`finding-card ${f.severity}`;
+        card.innerHTML=`<img class="finding-thumb" src="${r.thumb}" alt=""><div class="finding-info"><div class="finding-name">${esc(r.name)}</div><span class="finding-tag ${f.severity}">${esc(f.kind.replace(/_/g,' '))}</span><div class="finding-masked">${esc(f.masked)}</div><div class="finding-note">${esc(f.note)}</div></div>`;
+        $('resultsList').appendChild(card);
+      }
+    }
+  }
+
+  show('done-area');
+  if(results.length===0){
+    $('done-area').innerHTML=`<div class="done-banner clean"><div class="icon">&#x2705;</div><div class="msg">All clear</div><div class="sub">${scanned} image${scanned!==1?'s':''} scanned, no secrets found</div></div>`;
+  }else{
+    $('done-area').innerHTML=`<div class="done-banner"><div class="msg">Scan complete</div><div class="sub">Review each flagged photo on your phone and delete what shouldn't be there.<br>Photos &rarr; Recently Deleted &rarr; Delete All</div></div>`;
+  }
+  const btn=document.createElement('button');btn.className='scan-again';btn.textContent='Scan more photos';btn.onclick=reset;$('done-area').appendChild(btn);
+}
+
+function reset(){
+  show('upload-area');hide('progress-area');hide('stats-area');hide('results-area');hide('done-area');
+  $('resultsList').innerHTML='';$('numScanned').textContent='0';$('numHigh').textContent='0';$('numMed').textContent='0';
+  $('progBar').style.width='0%';$('fileInput').value='';
+}
+
+$('fileInput').addEventListener('change',e=>{const f=Array.from(e.target.files);if(f.length)runScan(f)});
+</script>
+</body>
+</html>
