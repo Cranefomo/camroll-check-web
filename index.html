@@ -334,7 +334,31 @@ function ibanOk(iban){const s=iban.slice(4)+iban.slice(0,4);let num='';for(const
 
 function findSeedPhrases(text){const tokens=(text.toLowerCase().match(/[a-zA-Z]+/g)||[]);let best=0,run=0;for(const t of tokens){if(BIP39.has(t)){run++;best=Math.max(best,run)}else run=0}if(best>=12)return[{kind:'seed_phrase',severity:'high',masked:'12+ BIP39 words in a row',note:'looks like a crypto wallet recovery phrase'}];return[]}
 
-function findCards(text){const re=/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;const out=[];let m;while((m=re.exec(text))!==null){const start=Math.max(0,m.index-3);const end=Math.min(text.length,m.index+m[0].length+3);const ctx=text.slice(start,end);if(/[.]/.test(ctx))continue;const d=m[0].replace(/\D/g,'');if(d.length>=13&&d.length<=19&&'23456'.includes(d[0])&&luhn(d))out.push({kind:'payment_card',severity:'high',masked:d[0]+'*** **** **** '+d.slice(-4),note:'Luhn-valid card number'})}if(out.length&&/\b(cvv|cvc|cvv2|security code)\b/i.test(text))out[0].note+=', CVV label on the same image';return out}
+function findCards(text){
+const finKw=/\b(shares?|portfolio|market|trade[ds]?|avg\s*price|volume|profit|loss|p\/l|expiry|conviction|crowdfeed|leaderboard|claimed|markets?\s*traded)\b/i;
+const isFin=finKw.test(text);
+const re=/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;const out=[];let m;
+while((m=re.exec(text))!==null){
+  const raw=m[0];
+  const d=raw.replace(/\D/g,'');
+  if(d.length<13||d.length>19||!'23456'.includes(d[0])||!luhn(d))continue;
+  // wide context: check ±20 chars for decimal dots
+  const s=Math.max(0,m.index-20);
+  const e=Math.min(text.length,m.index+raw.length+20);
+  const ctx=text.slice(s,e);
+  if(/\d\.\d/.test(ctx))continue;
+  // on financial screenshots require card-like separators (spaces/dashes between digit groups)
+  if(isFin){const seps=raw.replace(/\d/g,'').replace(/ /g,' ').trim();if(seps.length<3)continue;}
+  // check the line containing the match for decimal numbers
+  const lineStart=text.lastIndexOf('\n',m.index)+1;
+  const lineEnd=text.indexOf('\n',m.index+raw.length);
+  const line=text.slice(lineStart,lineEnd===-1?text.length:lineEnd);
+  if(/\d\.\d/.test(line))continue;
+  out.push({kind:'payment_card',severity:'high',masked:d[0]+'*** **** **** '+d.slice(-4),note:'Luhn-valid card number'});
+}
+if(out.length&&/\b(cvv|cvc|cvv2|security code)\b/i.test(text))out[0].note+=', CVV label on the same image';
+return out;
+}
 
 function findIbans(text){const re=/\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b/g;const out=[];let m;const u=text.toUpperCase();while((m=re.exec(u))!==null){const iban=m[0].replace(/ /g,'');if(iban.length>=15&&iban.length<=34&&ibanOk(iban))out.push({kind:'iban',severity:'medium',masked:iban.slice(0,4)+' **** '+iban.slice(-4),note:'valid IBAN'})}return out}
 
